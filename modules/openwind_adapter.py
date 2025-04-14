@@ -1,30 +1,44 @@
-
 import numpy as np
-from openwind.technical.instrument_geometry import geometry_from_points
-from openwind.technical.presets import physics_from_geometry
-from openwind.frequential.frequential_solver import FreqSolver
+from openwind.continuous.instrument_physics import InstrumentPhysics
+from openwind.continuous.pipe import AcousticPipe
+from openwind.continuous.netlist import InstrumentGeometry
+from openwind.frequential.frequential_solver import FrequentialSolver
 
-def run_impedance_simulation(bore_df, temperature, material_props, freq_range):
+def run_impedance_simulation(bore_df, temperature=25.0, material_props=None, freq_range=(100, 2000)):
+    """
+    Simulate impedance Z(f) for a bore geometry using OpenWind v0.11.3.
+
+    Parameters:
+        bore_df: DataFrame with 'position' and 'diameter' columns (meters).
+        temperature: Ambient temperature in °C.
+        material_props: (Optional) Placeholder for future use.
+        freq_range: Tuple (f_min, f_max) in Hz.
+
+    Returns:
+        Dict with 'frequency', 'magnitude', and 'phase'.
+    """
     if bore_df.empty or "position" not in bore_df.columns or "diameter" not in bore_df.columns:
         raise ValueError("Bore data must have 'position' and 'diameter' columns.")
 
     try:
-        # Extract bore geometry from dataframe
-        positions = bore_df["position"].tolist()
-        diameters = bore_df["diameter"].tolist()
-        bore_pts = list(zip(positions, diameters))
+        # Convert (x, diameter) to AcousticPipe list
+        points = list(zip(bore_df["position"], bore_df["diameter"] / 2))  # radius = diameter / 2
 
-        # Build OpenWind geometry
-        geometry = geometry_from_points(bore_pts)
+        # Create main bore as sequence of acoustic pipes
+        main_bore = [AcousticPipe(length=points[i+1][0] - points[i][0],
+                                  radius_in=points[i][1],
+                                  radius_out=points[i+1][1])
+                     for i in range(len(points) - 1)]
 
-        # Use built-in physics configuration
-        physics = physics_from_geometry(geometry)
+        geometry = InstrumentGeometry(main_bore=main_bore)
 
-        # Build solver and compute impedance
+        # Construct physics with optional player and loss model
+        physics = InstrumentPhysics(geometry, temperature=temperature, player=None, losses=True)
+
+        # Setup frequency range and solver
         freqs = np.linspace(freq_range[0], freq_range[1], 512)
-        solver = FreqSolver(instru_physics=physics, frequencies=freqs)
+        solver = FrequentialSolver(physics, freqs)
 
-        # Evaluate impedance
         Z = solver.evaluate_impedance_at(freqs)
 
         return {
@@ -34,4 +48,4 @@ def run_impedance_simulation(bore_df, temperature, material_props, freq_range):
         }
 
     except Exception as e:
-        raise RuntimeError(f"Simulation failed: {e}")
+        raise RuntimeError(f"Impedance simulation failed: {e}")
