@@ -9,22 +9,26 @@ def run_impedance_simulation(bore_df, temperature, material_props, freq_range):
     try:
         main_bore = list(zip(bore_df["position"].tolist(), bore_df["diameter"].tolist()))
 
-        # Player controls ONLY excitation input
         player = Player(dict_key={
             "excitator_type": "Flow",
             "input_flow": lambda t: 1e-6 if np.isclose(t, 0.0, atol=1e-6) else 0.0
         })
 
-        result = simulate(
+        # Run simulation
+        recording = simulate(
             player=player,
             main_bore=main_bore,
-            duration=0.1,
-            fmin=freq_range[0],
-            fmax=freq_range[1],
-            T=temperature,
-            **material_props
+            duration=0.1
         )
-        return result
+
+        freq = np.array(recording.t_solver.freq)
+        Zth = np.array(recording.t_solver.Zth)
+
+        return {
+            "frequency": freq,
+            "magnitude": np.abs(Zth),
+            "phase": np.angle(Zth, deg=True)
+        }
 
     except Exception as e:
         raise RuntimeError(f"Simulation failed: {e}")
